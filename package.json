@@ -1,0 +1,14 @@
+{
+  "name": "mixlens-bss-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency local blind source separation workbench with synthetic mixtures, diagnostics, matching and reconstruction.",
+  "scripts": {
+    "start": "python3 server.py",
+    "test": "python3 -I tests/test_core.py"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

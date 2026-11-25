@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MixLens · 盲源分离实验台</title>
+  <meta name="description" content="零外部数据依赖的合成序列盲源分离、白化诊断、匹配、重建与稳定性分析应用。" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <h1>MixLens 盲源分离实验台</h1>
+        <p>本地合成混合 · 白化/秩/缺测诊断 · 顺序符号尺度匹配 · 固定混合关系检验</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="auditBtn" type="button">运行反例核对</button>
+      <button class="btn ghost" id="themeBtn" type="button" aria-pressed="false">切换深色</button>
+      <button class="btn primary" id="runBtnTop" type="button">重新分析</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="分析控制">
+      <section class="panel">
+        <h2>1. 合成场景</h2>
+        <div class="form-grid">
+          <div class="field full">
+            <label for="scenario">反例/数据场景</label>
+            <select id="scenario">
+              <option value="independent">独立非高斯来源（正例）</option>
+              <option value="correlated">相关来源（独立性反例）</option>
+              <option value="gaussian">两个近似高斯来源</option>
+              <option value="rankdef">混合矩阵秩不足</option>
+              <option value="constant">常量传感器通道</option>
+              <option value="missing">缺测区通道</option>
+              <option value="permutation">后续段通道换位</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="seed">随机种子</label>
+            <input id="seed" type="number" value="818" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label for="nSamples">样本数</label>
+            <input id="nSamples" type="number" value="1600" min="400" max="3600" step="100" />
+          </div>
+          <div class="field">
+            <label for="nChannels">传感器数</label>
+            <select id="nChannels"><option>3</option><option selected>4</option><option>5</option><option>6</option></select>
+          </div>
+          <div class="field">
+            <label for="nSources">真实来源数</label>
+            <select id="nSources"><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+          </div>
+          <div class="field full">
+            <label for="noise">传感器噪声 SD：<span class="range-value" id="noiseValue">0.018</span></label>
+            <div class="range-row">
+              <input id="noise" type="range" min="0" max="0.08" step="0.002" value="0.018" />
+            </div>
+          </div>
+          <label class="switch-line field full" style="flex-direction:row;align-items:center;">
+            <input type="checkbox" id="missingEnabled" /> 在合成数据中加入缺测区
+          </label>
+        </div>
+        <p class="help">所有序列均由确定性公式/伪随机数在本地生成，不读取音频、仪器或网络资源。</p>
+      </section>
+
+      <section class="panel">
+        <h2>2. 屏蔽通道</h2>
+        <div id="channelList" class="check-list"></div>
+        <p class="help">屏蔽后该通道不参与白化、ICA 与拟合；常量通道会被自动排除并在诊断中标出。</p>
+      </section>
+
+      <section class="panel">
+        <h2>3. 时间段</h2>
+        <div class="form-grid">
+          <div class="field full">
+            <label>训练段起点 <span class="range-value" id="trainStartValue"></span></label>
+            <input id="trainStart" type="range" min="0" max="1599" value="96" />
+          </div>
+          <div class="field full">
+            <label>训练段终点 <span class="range-value" id="trainEndValue"></span></label>
+            <input id="trainEnd" type="range" min="24" max="1600" value="880" />
+          </div>
+          <div class="field full">
+            <label>检验段起点 <span class="range-value" id="evalStartValue"></span></label>
+            <input id="evalStart" type="range" min="0" max="1599" value="960" />
+          </div>
+          <div class="field full">
+            <label>检验段终点 <span class="range-value" id="evalEndValue"></span></label>
+            <input id="evalEnd" type="range" min="24" max="1600" value="1504" />
+          </div>
+        </div>
+        <p class="help">蓝色区域为训练段，绿色区域为固定系数检验段；缺测样本以断线显示。</p>
+      </section>
+
+      <section class="panel">
+        <h2>4. 分量与多起点</h2>
+        <div class="form-grid">
+          <div class="field full">
+            <label for="componentCount">估计分量数</label>
+            <select id="componentCount">
+              <option value="auto" selected>按白化有效秩自动</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="nStarts">ICA 起点数：<span class="range-value" id="nStartsValue">6</span></label>
+            <input id="nStarts" type="range" min="2" max="12" step="1" value="6" />
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>5. 通道换位重标定</h2>
+        <label class="switch-line">
+          <input type="checkbox" id="swapEnabled" /> 后续段交换两个通道
+        </label>
+        <div class="form-grid" style="margin-top:10px;">
+          <div class="field">
+            <label for="swapA">当前通道 A</label>
+            <select id="swapA"></select>
+          </div>
+          <div class="field">
+            <label for="swapB">当前通道 B</label>
+            <select id="swapB"></select>
+          </div>
+        </div>
+        <label class="switch-line" style="margin-top:10px;">
+          <input type="checkbox" id="recalibrateEnabled" checked /> 显式重标定均值、尺度与混合矩阵行
+        </label>
+        <p class="help">主重建默认使用显式排列重标定；取消上项可查看直接套用训练系数的结果，也可在图中叠加“未重标定”曲线。</p>
+      </section>
+
+      <section class="panel">
+        <h2>6. 注入已知来源</h2>
+        <label class="switch-line">
+          <input type="checkbox" id="injectionEnabled" /> 注入一个已知波形
+        </label>
+        <div class="injection-fields">
+          <div class="field">
+            <label for="injectionKind">已知波形</label>
+            <select id="injectionKind">
+              <option value="pulse">交替脉冲</option>
+              <option value="chirp">扫频</option>
+              <option value="square">方波</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="injectionSpatial">空间耦合样式</label>
+            <select id="injectionSpatial">
+              <option value="uniform">近似均匀</option>
+              <option value="gradient">梯度</option>
+              <option value="opposed">正负对消</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="injectionAmplitude">注入强度：<span class="range-value" id="injectionValue">0.90</span></label>
+            <input id="injectionAmplitude" type="range" min="0.1" max="1.8" step="0.05" value="0.9" />
+          </div>
+        </div>
+      </section>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button class="btn primary" id="runBtn" type="button">运行分析</button>
+        <button class="btn" id="resetBtn" type="button">恢复默认</button>
+        <button class="btn" id="exportCsvBtn" type="button">导出分量 CSV</button>
+        <button class="btn" id="exportJsonBtn" type="button">导出真实参数 JSON</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div id="statusBanner" class="status-banner" role="status" aria-live="polite">
+        <span>准备就绪。应用会在本地运行 FastICA/白化与重建计算。</span>
+      </div>
+
+      <section id="auditPanel" class="card audit-panel" aria-live="polite">
+        <div class="card-head">
+          <div>
+            <h2>独立与相关来源反例核对</h2>
+            <p class="desc">使用较小样本和 3 个起点快速核对恢复、重建、秩、缺测、常量和通道换位。</p>
+          </div>
+          <button class="btn small" id="closeAuditBtn" type="button">关闭</button>
+        </div>
+        <div id="auditContent"><p class="help">尚未运行。</p></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>诊断优先：量纲、缺测、常量与秩</h2>
+            <p class="desc">在解释分量前先检查数据是否满足盲源分离的可辨识条件。</p>
+          </div>
+        </div>
+        <div class="diagnostic-grid" id="diagCards"></div>
+        <div class="table-wrap">
+          <table class="data" id="channelDiagTable">
+            <thead><tr>
+              <th>通道</th><th>单位</th><th class="num">有效/总样本</th><th class="num">缺测%</th>
+              <th class="num">均值</th><th class="num">SD</th><th>缺测区间</th><th>状态</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="status-list" id="interpretationList" style="margin-top:14px;"></div>
+      </section>
+
+      <section class="kpi-grid" id="kpiGrid" aria-label="关键指标"></section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>观测、混合重建与残差</h2>
+            <p class="desc">同一传感器使用原始单位；重建由训练段固定的混合矩阵生成。好的重建只说明能解释观测，不单独证明来源恢复。</p>
+          </div>
+          <div class="controls-row">
+            <select id="obsChannelSelect" aria-label="选择观测通道"></select>
+            <label class="badge info"><input type="checkbox" id="showObserved" checked /> 观测</label>
+            <label class="badge good"><input type="checkbox" id="showRecon" checked /> 重标定重建</label>
+            <label class="badge warn"><input type="checkbox" id="showNaive" /> 未重标定</label>
+            <label class="badge bad"><input type="checkbox" id="showResidual" /> 残差图</label>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="obsChart" class="chart tall" role="img" aria-label="观测与重建时间序列图"></canvas>
+          <div id="obsTooltip" class="tooltip"></div>
+        </div>
+        <div class="chart-wrap" id="residualWrap" hidden>
+          <canvas id="residualChart" class="chart" role="img" aria-label="重建残差图"></canvas>
+          <div id="residualTooltip" class="tooltip"></div>
+        </div>
+        <div class="legend" id="obsLegend"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>估计分量与真实来源匹配</h2>
+            <p class="desc">使用绝对 Pearson 相关做最优一一分配，再校正符号和最小二乘尺度。虚线为合成真值；翻转或置换不会被误报为来源变化。</p>
+          </div>
+          <span class="badge info" id="matchPolicyBadge">匹配后显示</span>
+        </div>
+        <div class="grid-components" id="componentGrid"></div>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>混合矩阵核对</h2>
+              <p class="desc">估计列已按匹配的符号和尺度变换到真实来源坐标；热力图使用对称色标。</p>
+            </div>
+          </div>
+          <div class="matrix-columns">
+            <div>
+              <h3>真实使用的 A（原始单位）</h3>
+              <div class="table-wrap" id="trueMixTable"></div>
+            </div>
+            <div>
+              <h3>匹配/重标定后的 Â</h3>
+              <div class="table-wrap" id="estMixTable"></div>
+            </div>
+          </div>
+          <div class="table-wrap" style="margin-top:12px;">
+            <table class="data" id="mixMetricTable">
+              <thead><tr><th>真实来源</th><th>估计分量</th><th class="num">列余弦</th><th class="num">尺度比</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>多起点稳定性</h2>
+              <p class="desc">每对起点先做最优顺序与符号匹配，矩阵值为平均绝对相关。</p>
+            </div>
+          </div>
+          <div id="stabilityHeatmap" class="table-wrap"></div>
+          <div class="chart-wrap" style="margin-top:12px;">
+            <canvas id="stabilityOverlay" class="chart mini" role="img" aria-label="匹配后的多起点分量叠加"></canvas>
+            <div id="stabilityTooltip" class="tooltip"></div>
+          </div>
+          <div class="field" style="margin:8px 0;">
+            <label for="overlayComponent">叠加分量（选中参考顺序）</label>
+            <select id="overlayComponent"></select>
+          </div>
+          <div class="table-wrap">
+            <table class="data" id="runTable">
+              <thead><tr><th>#</th><th>种子</th><th class="num">迭代</th><th>收敛</th><th class="num">匹配分</th><th class="num">对比</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h2>匹配、相关性与固定段指标</h2></div></div>
+        <div id="independenceBox" class="table-wrap" style="margin-bottom:12px;"></div>
+        <div class="grid-2">
+          <div class="table-wrap">
+            <table class="data" id="matchTable">
+              <thead><tr><th>分量</th><th>匹配来源</th><th class="num">有符号 r</th><th class="num">|r|</th><th class="num">尺度增益</th><th>判定</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table class="data" id="segmentMetricTable">
+              <thead><tr><th>段/通道</th><th class="num">完整样本</th><th class="num">R²</th><th class="num">NRMSE(SD)</th><th class="num">残差 lag-1</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <details class="raw-details" style="margin-top:14px;">
+          <summary>查看白化/ICA/混合参数矩阵（导出 JSON 含完整精度）</summary>
+          <pre class="matrix-pre" id="rawMatrices"></pre>
+        </details>
+      </section>
+
+      <p class="footer-note">MixLens 使用 Python 标准库与原生 JavaScript 实现；BSS 分量不预设物理名称，结论以可辨识性、匹配和稳定性证据为准。</p>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
